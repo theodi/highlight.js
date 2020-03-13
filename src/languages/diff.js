@@ -2,49 +2,34 @@
 Language: Diff
 Description: Unified and context diff
 Author: Vasily Polovnyov <vast@whiteants.net>
+Website: https://www.gnu.org/software/diffutils/
+Category: common
 */
 
-function(hljs) {
+export default function(hljs) {
   return {
+    name: 'Diff',
+    aliases: ['patch'],
     contains: [
       {
-        className: 'chunk',
-        begin: '^\\@\\@ +\\-\\d+,\\d+ +\\+\\d+,\\d+ +\\@\\@$',
-        relevance: 10
+        className: 'meta',
+        relevance: 10,
+        variants: [
+          {begin: /^@@ +\-\d+,\d+ +\+\d+,\d+ +@@$/},
+          {begin: /^\*\*\* +\d+,\d+ +\*\*\*\*$/},
+          {begin: /^\-\-\- +\d+,\d+ +\-\-\-\-$/}
+        ]
       },
       {
-        className: 'chunk',
-        begin: '^\\*\\*\\* +\\d+,\\d+ +\\*\\*\\*\\*$',
-        relevance: 10
-      },
-      {
-        className: 'chunk',
-        begin: '^\\-\\-\\- +\\d+,\\d+ +\\-\\-\\-\\-$',
-        relevance: 10
-      },
-      {
-        className: 'header',
-        begin: 'Index: ', end: '$'
-      },
-      {
-        className: 'header',
-        begin: '=====', end: '=====$'
-      },
-      {
-        className: 'header',
-        begin: '^\\-\\-\\-', end: '$'
-      },
-      {
-        className: 'header',
-        begin: '^\\*{3} ', end: '$'
-      },
-      {
-        className: 'header',
-        begin: '^\\+\\+\\+', end: '$'
-      },
-      {
-        className: 'header',
-        begin: '\\*{5}', end: '\\*{5}$'
+        className: 'comment',
+        variants: [
+          {begin: /Index: /, end: /$/},
+          {begin: /={3,}/, end: /$/},
+          {begin: /^\-{3}/, end: /$/},
+          {begin: /^\*{3} /, end: /$/},
+          {begin: /^\+{3}/, end: /$/},
+          {begin: /^\*{15}$/ }
+        ]
       },
       {
         className: 'addition',
@@ -55,7 +40,7 @@ function(hljs) {
         begin: '^\\-', end: '$'
       },
       {
-        className: 'change',
+        className: 'addition',
         begin: '^\\!', end: '$'
       }
     ]

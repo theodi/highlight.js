@@ -1,22 +1,26 @@
 /*
 Language: R
+Description: R is a free software environment for statistical computing and graphics.
 Author: Joe Cheng <joe@rstudio.org>
+Website: https://www.r-project.org
+Category: scientific
 */
 
-function(hljs) {
+export default function(hljs) {
   var IDENT_RE = '([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*';
 
   return {
+    name: 'R',
     contains: [
       hljs.HASH_COMMENT_MODE,
       {
         begin: IDENT_RE,
-        lexems: IDENT_RE,
+        lexemes: IDENT_RE,
         keywords: {
           keyword:
-            'function if in break next repeat else for return switch while try tryCatch|10 ' +
+            'function if in break next repeat else for return switch while try tryCatch ' +
             'stop warning require library attach detach source setMethod setGeneric ' +
-            'setGroupGeneric setClass ...|10',
+            'setGroupGeneric setClass ...',
           literal:
             'NULL NA TRUE FALSE T F Inf NaN NA_integer_|10 NA_real_|10 NA_character_|10 ' +
             'NA_complex_|10'
@@ -63,17 +67,11 @@ function(hljs) {
 
       {
         className: 'string',
-        begin: '"',
-        end: '"',
         contains: [hljs.BACKSLASH_ESCAPE],
-        relevance: 0
-      },
-      {
-        className: 'string',
-        begin: "'",
-        end: "'",
-        contains: [hljs.BACKSLASH_ESCAPE],
-        relevance: 0
+        variants: [
+          {begin: '"', end: '"'},
+          {begin: "'", end: "'"}
+        ]
       }
     ]
   };

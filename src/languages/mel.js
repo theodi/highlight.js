@@ -2,10 +2,13 @@
 Language: MEL
 Description: Maya Embedded Language
 Author: Shuen-Huei Guan <drake.guan@gmail.com>
+Website: http://www.autodesk.com/products/autodesk-maya/overview
+Category: graphics
 */
 
-function(hljs) {
+export default function(hljs) {
   return {
+    name: 'MEL',
     keywords:
       'int float string vector matrix if else switch case default while do for in break ' +
       'continue global proc return about abs addAttr addAttributeEditorNodeHelp addDynamic ' +
@@ -44,7 +47,7 @@ function(hljs) {
       'cpSolverTypes cpTool cpUpdateClothUVs createDisplayLayer createDrawCtx createEditor ' +
       'createLayeredPsdFile createMotionField createNewShelf createNode createRenderLayer ' +
       'createSubdivRegion cross crossProduct ctxAbort ctxCompletion ctxEditMode ctxTraverse ' +
-      'currentCtx currentTime currentTimeCtx currentUnit currentUnit curve curveAddPtCtx ' +
+      'currentCtx currentTime currentTimeCtx currentUnit curve curveAddPtCtx ' +
       'curveCVCtx curveEPCtx curveEditorCtx curveIntersect curveMoveEPCtx curveOnSurface ' +
       'curveSketchCtx cutKey cycleCheck cylinder dagPose date defaultLightListCheckBox ' +
       'defaultNavigation defineDataServer defineVirtualDevice deformer deg_to_rad delete ' +
@@ -61,7 +64,7 @@ function(hljs) {
       'dynamicLoad editAttrLimits editDisplayLayerGlobals editDisplayLayerMembers ' +
       'editRenderLayerAdjustment editRenderLayerGlobals editRenderLayerMembers editor ' +
       'editorTemplate effector emit emitter enableDevice encodeString endString endsWith env ' +
-      'equivalent equivalentTol erf error eval eval evalDeferred evalEcho event ' +
+      'equivalent equivalentTol erf error eval evalDeferred evalEcho event ' +
       'exactWorldBoundingBox exclusiveLightCheckBox exec executeForEachObject exists exp ' +
       'expression expressionEditorListen extendCurve extendSurface extrude fcheck fclose feof ' +
       'fflush fgetline fgetword file fileBrowserDialog fileDialog fileExtension fileInfo ' +
@@ -220,14 +223,8 @@ function(hljs) {
         begin: '`', end: '`',
         contains: [hljs.BACKSLASH_ESCAPE]
       },
-      {
-        className: 'variable',
-        begin: '\\$\\d',
-        relevance: 5
-      },
-      {
-        className: 'variable',
-        begin: '[\\$\\%\\@\\*](\\^\\w\\b|#\\w+|[^\\s\\w{]|{\\w+}|\\w+)'
+      { // eats variables
+        begin: '[\\$\\%\\@](\\^\\w\\b|#\\w+|[^\\s\\w{]|{\\w+}|\\w+)'
       },
       hljs.C_LINE_COMMENT_MODE,
       hljs.C_BLOCK_COMMENT_MODE

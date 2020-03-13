@@ -1,22 +1,27 @@
 /*
 Language: Matlab
 Author: Denis Bardadym <bardadymchik@gmail.com>
-Contributors: Eugene Nizhibitsky <nizhibitsky@ya.ru>
+Contributors: Eugene Nizhibitsky <nizhibitsky@ya.ru>, Egor Rogov <e.rogov@postgrespro.ru>
+Website: https://www.mathworks.com/products/matlab.html
+Category: scientific
 */
 
-function(hljs) {
+/*
+  Formal syntax is not published, helpful link:
+  https://github.com/kornilova-l/matlab-IntelliJ-plugin/blob/master/src/main/grammar/Matlab.bnf
+*/
+export default function(hljs) {
 
-  var COMMON_CONTAINS = [
-    hljs.C_NUMBER_MODE,
-    {
-      className: 'string',
-      begin: '\'', end: '\'',
-      contains: [hljs.BACKSLASH_ESCAPE, {begin: '\'\''}],
-      relevance: 0
-    }
-  ];
+  var TRANSPOSE_RE = '(\'|\\.\')+';
+  var TRANSPOSE = {
+    relevance: 0,
+    contains: [
+      { begin: TRANSPOSE_RE }
+    ]
+  };
 
   return {
+    name: 'Matlab',
     keywords: {
       keyword:
         'break case catch classdef continue else elseif end enumerated events for function ' +
@@ -35,47 +40,65 @@ function(hljs) {
         'triu fliplr flipud flipdim rot90 find sub2ind ind2sub bsxfun ndgrid permute ipermute ' +
         'shiftdim circshift squeeze isscalar isvector ans eps realmax realmin pi i inf nan ' +
         'isnan isinf isfinite j why compan gallery hadamard hankel hilb invhilb magic pascal ' +
-        'rosser toeplitz vander wilkinson'
+        'rosser toeplitz vander wilkinson max min nanmax nanmin mean nanmean type table ' +
+        'readtable writetable sortrows sort figure plot plot3 scatter scatter3 cellfun ' +
+        'legend intersect ismember procrustes hold num2cell '
     },
     illegal: '(//|"|#|/\\*|\\s+/\\w+)',
     contains: [
       {
         className: 'function',
-        beginWithKeyword: true, end: '$',
-        keywords: 'function',
+        beginKeywords: 'function', end: '$',
         contains: [
+          hljs.UNDERSCORE_TITLE_MODE,
           {
-              className: 'title',
-              begin: hljs.UNDERSCORE_IDENT_RE
-          },
-          {
-              className: 'params',
-              begin: '\\(', end: '\\)'
-          },
-          {
-              className: 'params',
-              begin: '\\[', end: '\\]'
+            className: 'params',
+            variants: [
+              {begin: '\\(', end: '\\)'},
+              {begin: '\\[', end: '\\]'}
+            ]
           }
         ]
       },
       {
-        className: 'transposed_variable',
-        begin: '[a-zA-Z_][a-zA-Z_0-9]*(\'+[\\.\']*|[\\.\']+)', end: ''
+        className: 'built_in',
+        begin: /true|false/,
+        relevance: 0,
+        starts: TRANSPOSE
       },
       {
-        className: 'matrix',
-        begin: '\\[', end: '\\]\'*[\\.\']*',
-        contains: COMMON_CONTAINS
+        begin: '[a-zA-Z][a-zA-Z_0-9]*' + TRANSPOSE_RE,
+        relevance: 0
       },
       {
-        className: 'cell',
-        begin: '\\{', end: '\\}\'*[\\.\']*',
-        contains: COMMON_CONTAINS
+        className: 'number',
+        begin: hljs.C_NUMBER_RE,
+        relevance: 0,
+        starts: TRANSPOSE
       },
       {
-        className: 'comment',
-        begin: '\\%', end: '$'
-      }
-    ].concat(COMMON_CONTAINS)
+        className: 'string',
+        begin: '\'', end: '\'',
+        contains: [
+          hljs.BACKSLASH_ESCAPE,
+          {begin: '\'\''}]
+      },
+      {
+        begin: /\]|}|\)/,
+        relevance: 0,
+        starts: TRANSPOSE
+      },
+      {
+        className: 'string',
+        begin: '"', end: '"',
+        contains: [
+          hljs.BACKSLASH_ESCAPE,
+          {begin: '""'}
+        ],
+        starts: TRANSPOSE
+      },
+      hljs.COMMENT('^\\s*\\%\\{\\s*$', '^\\s*\\%\\}\\s*$'),
+      hljs.COMMENT('\\%', '$')
+    ]
   };
 }

@@ -2,29 +2,35 @@
 Language: Parser3
 Requires: xml.js
 Author: Oleg Volchkov <oleg@volchkov.net>
+Website: https://www.parser.ru/en/
+Category: template
 */
 
-function(hljs) {
+export default function(hljs) {
+  var CURLY_SUBCOMMENT = hljs.COMMENT(
+    '{',
+    '}',
+    {
+      contains: ['self']
+    }
+  );
   return {
+    name: 'Parser3',
     subLanguage: 'xml', relevance: 0,
     contains: [
+      hljs.COMMENT('^#', '$'),
+      hljs.COMMENT(
+        '\\^rem{',
+        '}',
+        {
+          relevance: 10,
+          contains: [
+            CURLY_SUBCOMMENT
+          ]
+        }
+      ),
       {
-        className: 'comment',
-        begin: '^#', end: '$'
-      },
-      {
-        className: 'comment',
-        begin: '\\^rem{', end: '}',
-        relevance: 10,
-        contains: [
-          {
-            begin: '{', end: '}',
-            contains: ['self']
-          }
-        ]
-      },
-      {
-        className: 'preprocessor',
+        className: 'meta',
         begin: '^@(?:BASE|USE|CLASS|OPTIONS)$',
         relevance: 10
       },

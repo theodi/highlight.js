@@ -1,9 +1,10 @@
 /*
 Language: ActionScript
 Author: Alexander Myadzel <myadzel@gmail.com>
+Category: scripting
 */
 
-function(hljs) {
+export default function(hljs) {
   var IDENT_RE = '[a-zA-Z_$][a-zA-Z0-9_$]*';
   var IDENT_FUNC_RETURN_TYPE_RE = '([*]|[a-zA-Z_$][a-zA-Z0-9_$]*)';
 
@@ -12,9 +13,10 @@ function(hljs) {
     begin: '[.]{3}', end: IDENT_RE,
     relevance: 10
   };
-  var TITLE_MODE = {className: 'title', begin: IDENT_RE};
 
   return {
+    name: 'ActionScript',
+    aliases: ['as'],
     keywords: {
       keyword: 'as break case catch class const continue default delete do dynamic each ' +
         'else extends final finally for function get if implements import in include ' +
@@ -30,35 +32,31 @@ function(hljs) {
       hljs.C_BLOCK_COMMENT_MODE,
       hljs.C_NUMBER_MODE,
       {
-        className: 'package',
-        beginWithKeyword: true, end: '{',
-        keywords: 'package',
-        contains: [TITLE_MODE]
+        className: 'class',
+        beginKeywords: 'package', end: '{',
+        contains: [hljs.TITLE_MODE]
       },
       {
         className: 'class',
-        beginWithKeyword: true, end: '{',
-        keywords: 'class interface',
+        beginKeywords: 'class interface', end: '{', excludeEnd: true,
         contains: [
           {
-            beginWithKeyword: true,
-            keywords: 'extends implements'
+            beginKeywords: 'extends implements'
           },
-          TITLE_MODE
+          hljs.TITLE_MODE
         ]
       },
       {
-        className: 'preprocessor',
-        beginWithKeyword: true, end: ';',
-        keywords: 'import include'
+        className: 'meta',
+        beginKeywords: 'import include', end: ';',
+        keywords: {'meta-keyword': 'import include'}
       },
       {
         className: 'function',
-        beginWithKeyword: true, end: '[{;]',
-        keywords: 'function',
+        beginKeywords: 'function', end: '[{;]', excludeEnd: true,
         illegal: '\\S',
         contains: [
-          TITLE_MODE,
+          hljs.TITLE_MODE,
           {
             className: 'params',
             begin: '\\(', end: '\\)',
@@ -71,13 +69,12 @@ function(hljs) {
             ]
           },
           {
-            className: 'type',
-            begin: ':',
-            end: IDENT_FUNC_RETURN_TYPE_RE,
-            relevance: 10
+            begin: ':\\s*' + IDENT_FUNC_RETURN_TYPE_RE
           }
         ]
-      }
-    ]
+      },
+      hljs.METHOD_GUARD
+    ],
+    illegal: /#/
   };
 }

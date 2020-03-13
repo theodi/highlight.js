@@ -1,86 +1,76 @@
 /*
-Language: Haml
+Language: HAML
 Requires: ruby.js
 Author: Dan Allen <dan.j.allen@gmail.com>
-Website: http://google.com/profiles/dan.j.allen
+Website: http://haml.info
+Category: template
 */
 
 // TODO support filter tags like :javascript, support inline HTML
-function(hljs) {
+export default function(hljs) {
   return {
+    name: 'HAML',
     case_insensitive: true,
     contains: [
       {
-        className: 'doctype',
+        className: 'meta',
         begin: '^!!!( (5|1\\.1|Strict|Frameset|Basic|Mobile|RDFa|XML\\b.*))?$',
         relevance: 10
       },
+      // FIXME these comments should be allowed to span indented lines
+      hljs.COMMENT(
+        '^\\s*(!=#|=#|-#|/).*$',
+        false,
+        {
+          relevance: 0
+        }
+      ),
       {
-        className: 'comment',
-        // FIXME these comments should be allowed to span indented lines
-        begin: '^\\s*(-#|/).*$',
-        relevance: 0
-      },
-      {
-        begin: '^\\s*-(?!#)',
+        begin: '^\\s*(-|=|!=)(?!#)',
         starts: {
           end: '\\n',
           subLanguage: 'ruby'
-        },
-        relevance: 0
+        }
       },
       {
         className: 'tag',
         begin: '^\\s*%',
         contains: [
           {
-            className: 'title',
-            begin: '\\w+',
-            relevance: 0
+            className: 'selector-tag',
+            begin: '\\w+'
           },
           {
-            className: 'value',
-            begin: '[#\\.]\\w+',
-            relevance: 0
+            className: 'selector-id',
+            begin: '#[\\w-]+'
+          },
+          {
+            className: 'selector-class',
+            begin: '\\.[\\w-]+'
           },
           {
             begin: '{\\s*',
             end: '\\s*}',
-            excludeEnd: true,
             contains: [
               {
-                //className: 'attribute',
                 begin: ':\\w+\\s*=>',
                 end: ',\\s+',
                 returnBegin: true,
                 endsWithParent: true,
-                relevance: 0,
                 contains: [
                   {
-                    className: 'symbol',
-                    begin: ':\\w+',
-                    relevance: 0
+                    className: 'attr',
+                    begin: ':\\w+'
                   },
-                  {
-                    className: 'string',
-                    begin: '"',
-                    end: '"',
-                    relevance: 0
-                  },
-                  {
-                    className: 'string',
-                    begin: '\'',
-                    end: '\'',
-                    relevance: 0
-                  },
+                  hljs.APOS_STRING_MODE,
+                  hljs.QUOTE_STRING_MODE,
                   {
                     begin: '\\w+',
                     relevance: 0
                   }
                 ]
-              },
-            ],
-            relevance: 0
+              }
+            ]
           },
           {
             begin: '\\(\\s*',
@@ -88,54 +78,37 @@ function(hljs) {
             excludeEnd: true,
             contains: [
               {
-                //className: 'attribute',
                 begin: '\\w+\\s*=',
                 end: '\\s+',
                 returnBegin: true,
                 endsWithParent: true,
-                relevance: 0,
                 contains: [
                   {
-                    className: 'attribute',
+                    className: 'attr',
                     begin: '\\w+',
                     relevance: 0
                   },
-                  {
-                    className: 'string',
-                    begin: '"',
-                    end: '"',
-                    relevance: 0
-                  },
-                  {
-                    className: 'string',
-                    begin: '\'',
-                    end: '\'',
-                    relevance: 0
-                  },
+                  hljs.APOS_STRING_MODE,
+                  hljs.QUOTE_STRING_MODE,
                   {
                     begin: '\\w+',
                     relevance: 0
                   }
                 ]
-              },
-            ],
-            relevance: 0
+              }
+            ]
           }
-        ],
-        relevance: 10
+        ]
       },
       {
-        className: 'bullet',
-        begin: '^\\s*[=~]\\s*',
-        relevance: 0
+        begin: '^\\s*[=~]\\s*'
       },
       {
         begin: '#{',
         starts: {
           end: '}',
           subLanguage: 'ruby'
-        },
-        relevance: 0
+        }
       }
     ]
   };

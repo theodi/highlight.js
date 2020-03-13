@@ -3,62 +3,82 @@ Language: Handlebars
 Requires: xml.js
 Author: Robin Ward <robin.ward@gmail.com>
 Description: Matcher for Handlebars as well as EmberJS additions.
+Website: https://handlebarsjs.com
+Category: template
 */
 
-function(hljs) {
+export default function(hljs) {
+  var BUILT_INS = {'builtin-name': 'each in with if else unless bindattr action collection debugger log outlet template unbound view yield lookup'};
 
-  function copy(mode, parent) {
-    var result = {};
-    for (var key in mode) {
-      if (key != 'contains') {
-        result[key] = mode[key];
-      }
-      var contains = [];
-      for (var i = 0; mode.contains && i < mode.contains.length; i++) {
-        contains.push(copy(mode.contains[i], mode));
-      }
-      contains = HANDLEBARS_CONTAINS.concat(contains);
-      if (contains.length) {
-        result.contains = contains;
-      }
-    }
-    return result;
-  }
-
-  var EXPRESSION_KEYWORDS = "each in with if else unless bindattr action collection debugger log outlet template unbound view yield";
-
-  var VARIABLE_CONTAINS = 
-  {
-    className: 'variable', begin: '[a-zA-Z\.]+',
-    keywords: EXPRESSION_KEYWORDS
+  var IDENTIFIER_PLAIN_OR_QUOTED = {
+    begin: /".*?"|'.*?'|\[.*?\]|\w+/
   };
 
-  var HANDLEBARS_CONTAINS = [
-    {
-      className: 'expression',
-      begin: '{{', end: '}}',
-      contains: [
-        {
-          className: 'begin-block', begin: '\#[a-zA-Z\ \.]+',
-          keywords: EXPRESSION_KEYWORDS
-        },
-        {
-          className: 'string',
-          begin: '"', end: '"'
-        },        
-        {
-          className: 'end-block', begin: '\\\/[a-zA-Z\ \.]+',
-          keywords: EXPRESSION_KEYWORDS
-        },        
-        {
-          className: 'variable', begin: '[a-zA-Z\.]+',
-          keywords: EXPRESSION_KEYWORDS
-        }               
-      ]
+  var EXPRESSION_OR_HELPER_CALL = hljs.inherit(IDENTIFIER_PLAIN_OR_QUOTED, {
+    keywords: BUILT_INS,
+    starts: {
+      // helper params
+      endsWithParent: true,
+      relevance: 0,
+      contains: [hljs.inherit(IDENTIFIER_PLAIN_OR_QUOTED, {relevance: 0})]
     }
-  ];
+  });
 
-  var result = copy(hljs.LANGUAGES.xml);
-  result.case_insensitive = true;
-  return result;
+  var BLOCK_MUSTACHE_CONTENTS = hljs.inherit(EXPRESSION_OR_HELPER_CALL, {
+    className: 'name'
+  });
+
+  var BASIC_MUSTACHE_CONTENTS = hljs.inherit(EXPRESSION_OR_HELPER_CALL, {
+    // relevance 0 for backward compatibility concerning auto-detection
+    relevance: 0
+  });
+
+  var ESCAPE_MUSTACHE_WITH_PRECEEDING_BACKSLASH = {begin: /\\\{\{/, skip: true};
+  var PREVENT_ESCAPE_WITH_ANOTHER_PRECEEDING_BACKSLASH = {begin: /\\\\(?=\{\{)/, skip: true};
+
+  return {
+    name: 'Handlebars',
+    aliases: ['hbs', 'html.hbs', 'html.handlebars'],
+    case_insensitive: true,
+    subLanguage: 'xml',
+    contains: [
+      ESCAPE_MUSTACHE_WITH_PRECEEDING_BACKSLASH,
+      PREVENT_ESCAPE_WITH_ANOTHER_PRECEEDING_BACKSLASH,
+      hljs.COMMENT(/\{\{!--/, /--\}\}/),
+      hljs.COMMENT(/\{\{!/, /\}\}/),
+      {
+        // open raw block "{{{{raw}}}} content not evaluated {{{{/raw}}}}"
+        className: 'template-tag',
+        begin: /\{\{\{\{(?!\/)/, end: /\}\}\}\}/,
+        contains: [BLOCK_MUSTACHE_CONTENTS],
+        starts: {end: /\{\{\{\{\//, returnEnd: true, subLanguage: 'xml'}
+      },
+      {
+        // close raw block
+        className: 'template-tag',
+        begin: /\{\{\{\{\//, end: /\}\}\}\}/,
+        contains: [BLOCK_MUSTACHE_CONTENTS]
+      },
+      {
+        // open block statement
+        className: 'template-tag',
+        begin: /\{\{[#\/]/, end: /\}\}/,
+        contains: [BLOCK_MUSTACHE_CONTENTS],
+      },
+      {
+        // template variable or helper-call that is NOT html-escaped
+        className: 'template-variable',
+        begin: /\{\{\{/, end: /\}\}\}/,
+        keywords: BUILT_INS,
+        contains: [BASIC_MUSTACHE_CONTENTS]
+      },
+      {
+        // template variable or helper-call that is html-escaped
+        className: 'template-variable',
+        begin: /\{\{/, end: /\}\}/,
+        keywords: BUILT_INS,
+        contains: [BASIC_MUSTACHE_CONTENTS]
+      }
+    ]
+  };
 }

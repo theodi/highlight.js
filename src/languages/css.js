@@ -1,103 +1,130 @@
 /*
 Language: CSS
+Category: common, css
+Website: https://developer.mozilla.org/en-US/docs/Web/CSS
 */
 
-function(hljs) {
+export default function(hljs) {
+  var FUNCTION_LIKE = {
+    begin: /[\w-]+\(/, returnBegin: true,
+    contains: [
+      {
+        className: 'built_in',
+        begin: /[\w-]+/
+      },
+      {
+        begin: /\(/, end: /\)/,
+        contains: [
+          hljs.APOS_STRING_MODE,
+          hljs.QUOTE_STRING_MODE,
+          hljs.CSS_NUMBER_MODE,
+        ]
+      }
+    ]
+  }
+  var ATTRIBUTE = {
+    className: 'attribute',
+    begin: /\S/, end: ':', excludeEnd: true,
+    starts: {
+      endsWithParent: true, excludeEnd: true,
+      contains: [
+        FUNCTION_LIKE,
+        hljs.CSS_NUMBER_MODE,
+        hljs.QUOTE_STRING_MODE,
+        hljs.APOS_STRING_MODE,
+        hljs.C_BLOCK_COMMENT_MODE,
+        {
+          className: 'number', begin: '#[0-9A-Fa-f]+'
+        },
+        {
+          className: 'meta', begin: '!important'
+        }
+      ]
+    }
+  }
+  var AT_IDENTIFIER = '@[a-z-]+' // @font-face
+  var AT_MODIFIERS = "and or not only"
+  var MEDIA_TYPES = "all print screen speech"
+  var AT_PROPERTY_RE = /@\-?\w[\w]*(\-\w+)*/ // @-webkit-keyframes
   var IDENT_RE = '[a-zA-Z-][a-zA-Z0-9_-]*';
-  var FUNCTION = {
-    className: 'function',
-    begin: IDENT_RE + '\\(', end: '\\)',
-    contains: ['self', hljs.NUMBER_MODE, hljs.APOS_STRING_MODE, hljs.QUOTE_STRING_MODE]
+  var RULE = {
+    begin: /(?:[A-Z\_\.\-]+|--[a-zA-Z0-9_-]+)\s*:/, returnBegin: true, end: ';', endsWithParent: true,
+    contains: [
+      ATTRIBUTE
+    ]
   };
+
   return {
+    name: 'CSS',
     case_insensitive: true,
-    illegal: '[=/|\']',
+    illegal: /[=\/|'\$]/,
     contains: [
       hljs.C_BLOCK_COMMENT_MODE,
       {
-        className: 'id', begin: '\\#[A-Za-z0-9_-]+'
+        className: 'selector-id', begin: /#[A-Za-z0-9_-]+/
       },
       {
-        className: 'class', begin: '\\.[A-Za-z0-9_-]+',
-        relevance: 0
+        className: 'selector-class', begin: /\.[A-Za-z0-9_-]+/
       },
       {
-        className: 'attr_selector',
-        begin: '\\[', end: '\\]',
-        illegal: '$'
+        className: 'selector-attr',
+        begin: /\[/, end: /\]/,
+        illegal: '$',
+        contains: [
+          hljs.APOS_STRING_MODE,
+          hljs.QUOTE_STRING_MODE,
+        ]
       },
       {
-        className: 'pseudo',
-        begin: ':(:)?[a-zA-Z0-9\\_\\-\\+\\(\\)\\"\\\']+'
+        className: 'selector-pseudo',
+        begin: /:(:)?[a-zA-Z0-9\_\-\+\(\)"'.]+/
+      },
+      // matching these here allows us to treat them more like regular CSS
+      // rules so everything between the {} gets regular rule highlighting,
+      // which is what we want for page and font-face
+      {
+        begin: '@(page|font-face)',
+        lexemes: AT_IDENTIFIER,
+        keywords: '@page @font-face'
       },
       {
-        className: 'at_rule',
-        begin: '@(font-face|page)',
-        lexems: '[a-z-]+',
-        keywords: 'font-face page'
-      },
-      {
-        className: 'at_rule',
         begin: '@', end: '[{;]', // at_rule eating first "{" is a good thing
                                  // because it doesn’t let it to be parsed as
                                  // a rule set but instead drops parser into
                                  // the default mode which is how it should be.
+        illegal: /:/, // break on Less variables @var: ...
+        returnBegin: true,
         contains: [
           {
             className: 'keyword',
-            begin: /\S+/
+            begin: AT_PROPERTY_RE
           },
           {
             begin: /\s/, endsWithParent: true, excludeEnd: true,
             relevance: 0,
+            keywords: AT_MODIFIERS,
             contains: [
-              FUNCTION,
-              hljs.APOS_STRING_MODE, hljs.QUOTE_STRING_MODE,
-              hljs.NUMBER_MODE
+              {
+                begin: /[a-z-]+:/,
+                className:"attribute"
+              },
+              hljs.APOS_STRING_MODE,
+              hljs.QUOTE_STRING_MODE,
+              hljs.CSS_NUMBER_MODE
             ]
           }
         ]
       },
       {
-        className: 'tag', begin: IDENT_RE,
+        className: 'selector-tag', begin: IDENT_RE,
         relevance: 0
       },
       {
-        className: 'rules',
         begin: '{', end: '}',
-        illegal: '[^\\s]',
-        relevance: 0,
+        illegal: /\S/,
         contains: [
           hljs.C_BLOCK_COMMENT_MODE,
-          {
-            className: 'rule',
-            begin: '[^\\s]', returnBegin: true, end: ';', endsWithParent: true,
-            contains: [
-              {
-                className: 'attribute',
-                begin: '[A-Z\\_\\.\\-]+', end: ':',
-                excludeEnd: true,
-                illegal: '[^\\s]',
-                starts: {
-                  className: 'value',
-                  endsWithParent: true, excludeEnd: true,
-                  contains: [
-                    FUNCTION,
-                    hljs.NUMBER_MODE,
-                    hljs.QUOTE_STRING_MODE,
-                    hljs.APOS_STRING_MODE,
-                    hljs.C_BLOCK_COMMENT_MODE,
-                    {
-                      className: 'hexcolor', begin: '#[0-9A-Fa-f]+'
-                    },
-                    {
-                      className: 'important', begin: '!important'
-                    }
-                  ]
-                }
-              }
-            ]
-          }
+          RULE,
         ]
       }
     ]

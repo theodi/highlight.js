@@ -2,10 +2,12 @@
 Language: Vala
 Author: Antono Vasiljev <antono.vasiljev@gmail.com>
 Description: Vala is a new programming language that aims to bring modern programming language features to GNOME developers without imposing any additional runtime requirements and without using a different ABI compared to applications and libraries written in C.
+Website: https://wiki.gnome.org/Projects/Vala
 */
 
-function(hljs) {
+export default function(hljs) {
   return {
+    name: 'Vala',
     keywords: {
       keyword:
         // Value types
@@ -14,29 +16,25 @@ function(hljs) {
         // Reference types
         'weak unowned owned ' +
         // Modifiers
-        'async signal static abstract interface override ' +
+        'async signal static abstract interface override virtual delegate ' +
         // Control Structures
-        'while do for foreach else switch case break default return try catch ' +
+        'if while do for foreach else switch case break default return try catch ' +
         // Visibility
         'public private protected internal ' +
         // Other
         'using new this get set const stdout stdin stderr var',
       built_in:
-        'DBus GLib CCode Gee Object',
+        'DBus GLib CCode Gee Object Gtk Posix',
       literal:
         'false true null'
     },
     contains: [
       {
         className: 'class',
-        beginWithKeyword: true, end: '{',
-        keywords: 'class interface delegate namespace',
+        beginKeywords: 'class interface namespace', end: '{', excludeEnd: true,
         illegal: '[^,:\\n\\s\\.]',
         contains: [
-          {
-            className: 'title',
-            begin: hljs.UNDERSCORE_IDENT_RE
-          }
+          hljs.UNDERSCORE_TITLE_MODE
         ]
       },
       hljs.C_LINE_COMMENT_MODE,
@@ -50,14 +48,9 @@ function(hljs) {
       hljs.QUOTE_STRING_MODE,
       hljs.C_NUMBER_MODE,
       {
-        className: 'preprocessor',
+        className: 'meta',
         begin: '^#', end: '$',
         relevance: 2
-      },
-      {
-        className: 'constant',
-        begin: ' [A-Z_]+ ',
-        relevance: 0
       }
     ]
   };

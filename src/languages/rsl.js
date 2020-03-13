@@ -2,10 +2,13 @@
 Language: RenderMan RSL
 Author: Konstantin Evdokimenko <qewerty@gmail.com>
 Contributors: Shuen-Huei Guan <drake.guan@gmail.com>
+Website: https://renderman.pixar.com/resources/RenderMan_20/shadingLanguage.html
+Category: graphics
 */
 
-function(hljs) {
+export default function(hljs) {
   return {
+    name: 'RenderMan RSL',
     keywords: {
       keyword:
         'float color point normal vector matrix while for if do return else break extern continue',
@@ -26,18 +29,15 @@ function(hljs) {
       hljs.APOS_STRING_MODE,
       hljs.C_NUMBER_MODE,
       {
-        className: 'preprocessor',
+        className: 'meta',
         begin: '#', end: '$'
       },
       {
-        className: 'shader',
-        beginWithKeyword: true, end: '\\(',
-        keywords: 'surface displacement light volume imager'
+        className: 'class',
+        beginKeywords: 'surface displacement light volume imager', end: '\\('
       },
       {
-        className: 'shading',
-        beginWithKeyword: true, end: '\\(',
-        keywords: 'illuminate illuminance gather'
+        beginKeywords: 'illuminate illuminance gather', end: '\\('
       }
     ]
   };

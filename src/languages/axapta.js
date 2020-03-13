@@ -1,10 +1,13 @@
 /*
-Language: Axapta
+Language: Microsoft Axapta (now Dynamics 365)
 Author: Dmitri Roudakov <dmitri@roudakov.ru>
+Website: https://dynamics.microsoft.com/en-us/ax-overview/
+Category: enterprise
 */
 
-function(hljs) {
+export default function(hljs) {
   return {
+    name: 'Dynamics 365',
     keywords: 'false int abstract private char boolean static null if for true ' +
       'while long throw finally protected final return void enum else ' +
       'break new catch byte super case short default double public try this switch ' +
@@ -18,25 +21,16 @@ function(hljs) {
       hljs.QUOTE_STRING_MODE,
       hljs.C_NUMBER_MODE,
       {
-        className: 'preprocessor',
+        className: 'meta',
         begin: '#', end: '$'
       },
       {
         className: 'class',
-        beginWithKeyword: true, end: '{',
+        beginKeywords: 'class interface', end: '{', excludeEnd: true,
         illegal: ':',
-        keywords: 'class interface',
         contains: [
-          {
-            className: 'inheritance',
-            beginWithKeyword: true,
-            keywords: 'extends implements',
-            relevance: 10
-          },
-          {
-            className: 'title',
-            begin: hljs.UNDERSCORE_IDENT_RE
-          }
+          {beginKeywords: 'extends implements'},
+          hljs.UNDERSCORE_TITLE_MODE
         ]
       }
     ]

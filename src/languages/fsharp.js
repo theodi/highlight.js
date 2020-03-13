@@ -1,10 +1,21 @@
 /*
 Language: F#
 Author: Jonas Follesø <jonas@follesoe.no>
-Description: F# language definition.
+Contributors: Troy Kershaw <hello@troykershaw.com>, Henrik Feldt <henrik@haf.se>
+Website: https://docs.microsoft.com/en-us/dotnet/fsharp/
+Category: functional
 */
-function(hljs) {
+export default function(hljs) {
+  var TYPEPARAM = {
+    begin: '<', end: '>',
+    contains: [
+      hljs.inherit(hljs.TITLE_MODE, {begin: /'[a-zA-Z0-9_]+/})
+    ]
+  };
+
   return {
+    name: 'F#',
+    aliases: ['fs'],
     keywords:
       'abstract and as assert base begin class default delegate do done ' +
       'downcast downto elif else end exception extern false finally for ' +
@@ -12,8 +23,13 @@ function(hljs) {
       'match member module mutable namespace new null of open or ' +
       'override private public rec return sig static struct then to ' +
       'true try type upcast use val void when while with yield',
+    illegal: /\/\*/,
     contains: [
-
+      {
+        // monad builder keywords (matches before non-bang kws)
+        className: 'keyword',
+        begin: /\b(yield|return|let|do)!/
+      },
       {
         className: 'string',
         begin: '@"', end: '"',
@@ -23,34 +39,28 @@ function(hljs) {
         className: 'string',
         begin: '"""', end: '"""'
       },
-      {
-        className: 'comment',
-        begin: '//', end: '$', returnBegin: true
-      },
-      {
-        className: 'comment',
-        begin: '\\(\\*', end: '\\*\\)'
-      },
+      hljs.COMMENT('\\(\\*', '\\*\\)'),
       {
         className: 'class',
-        beginWithKeyword: true, end: '\\(|=|$',
-        keywords: 'type',
+        beginKeywords: 'type', end: '\\(|=|$', excludeEnd: true,
         contains: [
-          {
-            className: 'title',
-            begin: hljs.UNDERSCORE_IDENT_RE
-          }
+          hljs.UNDERSCORE_TITLE_MODE,
+          TYPEPARAM
         ]
       },
       {
-        className: 'annotation',
-        begin: '\\[<', end: '>\\]'
+        className: 'meta',
+        begin: '\\[<', end: '>\\]',
+        relevance: 10
+      },
+      {
+        className: 'symbol',
+        begin: '\\B(\'[A-Za-z])\\b',
+        contains: [hljs.BACKSLASH_ESCAPE]
       },
       hljs.C_LINE_COMMENT_MODE,
-      hljs.C_BLOCK_COMMENT_MODE,
-      hljs.inherit(hljs.APOS_STRING_MODE, {illegal: null}),
       hljs.inherit(hljs.QUOTE_STRING_MODE, {illegal: null}),
       hljs.C_NUMBER_MODE
     ]
-  }
+  };
 }

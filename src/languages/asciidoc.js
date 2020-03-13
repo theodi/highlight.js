@@ -2,29 +2,35 @@
 Language: AsciiDoc
 Requires: xml.js
 Author: Dan Allen <dan.j.allen@gmail.com>
-Website: http://google.com/profiles/dan.j.allen
+Website: http://asciidoc.org
 Description: A semantic, text-based document format that can be exported to HTML, DocBook and other backends.
+Category: markup
 */
-function(hljs) {
+
+export default function(hljs) {
   return {
+    name: 'AsciiDoc',
+    aliases: ['adoc'],
     contains: [
       // block comment
-      {
-        className: 'comment',
-        begin: '^/{4,}\\n',
-        end: '\\n/{4,}$',
+      hljs.COMMENT(
+        '^/{4,}\\n',
+        '\\n/{4,}$',
         // can also be done as...
-        //begin: '^/{4,}$',
-        //end: '^/{4,}$',
-        relevance: 10
-      },
+        //'^/{4,}$',
+        //'^/{4,}$',
+        {
+          relevance: 10
+        }
+      ),
       // line comment
-      {
-        className: 'comment',
-        begin: '^//',
-        end: '$',
-        relevance: 0
-      },
+      hljs.COMMENT(
+        '^//',
+        '$',
+        {
+          relevance: 0
+        }
+      ),
       // title
       {
         className: 'title',
@@ -38,18 +44,16 @@ function(hljs) {
       },
       // headings
       {
-        className: 'header',
-        begin: '^(={1,5}) .+?( \\1)?$',
-        relevance: 10
-      },
-      {
-        className: 'header',
-        begin: '^[^\\[\\]\\n]+?\\n[=\\-~\\^\\+]{2,}$',
-        relevance: 10
+        className: 'section',
+        relevance: 10,
+        variants: [
+          {begin: '^(={1,5}) .+?( \\1)?$'},
+          {begin: '^[^\\[\\]\\n]+?\\n[=\\-~\\^\\+]{2,}$'},
+        ]
       },
       // document attributes
       {
-        className: 'attribute',
+        className: 'meta',
         begin: '^:.+?:',
         end: '\\s',
         excludeEnd: true,
@@ -57,13 +61,13 @@ function(hljs) {
       },
       // block attributes
       {
-        className: 'attribute',
+        className: 'meta',
         begin: '^\\[.+?\\]$',
         relevance: 0
       },
       // quoteblocks
       {
-        className: 'blockquote',
+        className: 'quote',
         begin: '^_{4,}\\n',
         end: '\\n_{4,}$',
         relevance: 10
@@ -95,7 +99,7 @@ function(hljs) {
       },
       // admonition
       {
-        className: 'label',
+        className: 'symbol',
         begin: '^(NOTE|TIP|IMPORTANT|WARNING|CAUTION):\\s+',
         relevance: 10
       },
@@ -136,6 +140,14 @@ function(hljs) {
         end: '(\\n{2}|_)',
         relevance: 0
       },
+      // inline smart quotes
+      {
+        className: 'string',
+        variants: [
+          {begin: "``.+?''"},
+          {begin: "`.+?'"}
+        ]
+      },
       // inline code snippets (TODO should get same treatment as strong and emphasis)
       {
         className: 'code',
@@ -151,8 +163,7 @@ function(hljs) {
       },
       // horizontal rules
       {
-        className: 'horizontal_rule',
-        begin: '^\'{4,}[ \\t]*$',
+        begin: '^\'{3,}[ \\t]*$',
         relevance: 10
       },
       // images and links
@@ -161,18 +172,17 @@ function(hljs) {
         returnBegin: true,
         contains: [
           {
-            //className: 'macro',
             begin: '(link|image:?):',
             relevance: 0
           },
           {
-            className: 'link_url',
+            className: 'link',
             begin: '\\w',
             end: '[^\\[]+',
             relevance: 0
           },
           {
-            className: 'link_label',
+            className: 'string',
             begin: '\\[',
             end: '\\]',
             excludeBegin: true,

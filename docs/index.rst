@@ -14,9 +14,13 @@ Contents:
    api
    language-guide
    reference
+   css-classes-reference
    style-guide
-   contribution
+   plugin-api
+   plugin-recipes
+   language-contribution
    building-testing
+   maintainers-guide
 
 Miscellaneous:
 
@@ -24,12 +28,13 @@ Miscellaneous:
    :maxdepth: 1
 
    line-numbers
+   language-requests
 
 Links:
 
-- Code: https://github.com/isagalaev/highlight.js
+- Code: https://github.com/highlightjs/highlight.js
 - Discussion: http://groups.google.com/group/highlightjs
-- Bug tracking: https://github.com/isagalaev/highlight.js/issues
+- Bug tracking: https://github.com/highlightjs/highlight.js/issues
 
 
 Indices and tables

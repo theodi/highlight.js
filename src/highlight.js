@@ -1,258 +1,135 @@
 /*
 Syntax highlighting with language autodetection.
-http://softwaremaniacs.org/soft/highlight/
+https://highlightjs.org/
 */
 
-function() {
+import deepFreeze from './vendor/deep_freeze';
+import TokenTreeEmitter from './lib/token_tree';
+import * as regex from './lib/regex';
+import * as utils from './lib/utils';
+import * as MODES from './lib/modes';
+import { compileLanguage } from './lib/mode_compiler';
+import * as packageJSON from '../package.json';
+
+const escape = utils.escapeHTML;
+const inherit = utils.inherit;
+
+const { nodeStream, mergeStreams } = utils;
+
+
+const HLJS = function(hljs) {
+
+  // Convenience variables for build-in objects
+  var ArrayProto = [];
+
+  // Global internal variables used within the highlight.js library.
+  var languages = {},
+      aliases   = {},
+      plugins   = [];
+
+  // safe/production mode - swallows more errors, tries to keep running
+  // even if a single syntax or parse hits a fatal error
+  var SAFE_MODE = true;
+
+  // Regular expressions used throughout the highlight.js library.
+  var fixMarkupRe      = /((^(<[^>]+>|\t|)+|(?:\n)))/gm;
+
+  var LANGUAGE_NOT_FOUND = "Could not find the language '{}', did you forget to load/include a language module?";
+
+  // Global options used when within external APIs. This is modified when
+  // calling the `hljs.configure` function.
+  var options = {
+    noHighlightRe: /^(no-?highlight)$/i,
+    languageDetectRe: /\blang(?:uage)?-([\w-]+)\b/i,
+    classPrefix: 'hljs-',
+    tabReplace: null,
+    useBR: false,
+    languages: undefined,
+    // beta configuration options, subject to change, welcome to discuss
+    // https://github.com/highlightjs/highlight.js/issues/1086
+    __emitter: TokenTreeEmitter
+  };
 
   /* Utility functions */
 
-  function escape(value) {
-    return value.replace(/&/gm, '&amp;').replace(/</gm, '&lt;').replace(/>/gm, '&gt;');
-  }
-
-  function findCode(pre) {
-    for (var node = pre.firstChild; node; node = node.nextSibling) {
-      if (node.nodeName == 'CODE')
-        return node;
-      if (!(node.nodeType == 3 && node.nodeValue.match(/\s+/)))
-        break;
-    }
-  }
-
-  function blockText(block, ignoreNewLines) {
-    return Array.prototype.map.call(block.childNodes, function(node) {
-      if (node.nodeType == 3) {
-        return ignoreNewLines ? node.nodeValue.replace(/\n/g, '') : node.nodeValue;
-      }
-      if (node.nodeName == 'BR') {
-        return '\n';
-      }
-      return blockText(node, ignoreNewLines);
-    }).join('');
+  function shouldNotHighlight(language) {
+    return options.noHighlightRe.test(language);
   }
 
   function blockLanguage(block) {
-    var classes = (block.className + ' ' + (block.parentNode ? block.parentNode.className : '')).split(/\s+/);
-    classes = classes.map(function(c) {return c.replace(/^language-/, '')});
-    for (var i = 0; i < classes.length; i++) {
-      if (languages[classes[i]] || classes[i] == 'no-highlight') {
-        return classes[i];
+    var match;
+    var classes = block.className + ' ';
+
+    classes += block.parentNode ? block.parentNode.className : '';
+
+    // language-* takes precedence over non-prefixed class names.
+    match = options.languageDetectRe.exec(classes);
+    if (match) {
+      var language = getLanguage(match[1]);
+      if (!language) {
+        console.warn(LANGUAGE_NOT_FOUND.replace("{}", match[1]));
+        console.warn("Falling back to no-highlight mode for this block.", block);
       }
+      return language ? match[1] : 'no-highlight';
     }
+
+    return classes
+      .split(/\s+/)
+      .find((_class) => shouldNotHighlight(_class) || getLanguage(_class));
   }
 
-  /* Stream merging */
+  /**
+   * Core highlighting function.
+   *
+   * @param {string} languageName - the language to use for highlighting
+   * @param {string} code - the code to highlight
+   * @param {boolean} ignore_illegals - whether to ignore illegal matches, default is to bail
+   * @param {array<mode>} continuation - array of continuation modes
+   *
+   * @returns an object that represents the result
+   * @property {string} language - the language name
+   * @property {number} relevance - the relevance score
+   * @property {string} value - the highlighted HTML code
+   * @property {string} code - the original raw code
+   * @property {mode} top - top of the current mode stack
+   * @property {boolean} illegal - indicates whether any illegal matches were found
+  */
+  function highlight(languageName, code, ignore_illegals, continuation) {
+    var context = {
+      code,
+      language: languageName
+    };
+    // the plugin can change the desired language or the code to be highlighted
+    // just be changing the object it was passed
+    fire("before:highlight", context);
 
-  function nodeStream(node) {
-    var result = [];
-    (function _nodeStream(node, offset) {
-      for (var child = node.firstChild; child; child = child.nextSibling) {
-        if (child.nodeType == 3)
-          offset += child.nodeValue.length;
-        else if (child.nodeName == 'BR')
-          offset += 1;
-        else if (child.nodeType == 1) {
-          result.push({
-            event: 'start',
-            offset: offset,
-            node: child
-          });
-          offset = _nodeStream(child, offset);
-          result.push({
-            event: 'stop',
-            offset: offset,
-            node: child
-          });
-        }
-      }
-      return offset;
-    })(node, 0);
+    // a before plugin can usurp the result completely by providing it's own
+    // in which case we don't even need to call highlight
+    var result = context.result ?
+      context.result :
+      _highlight(context.language, context.code, ignore_illegals, continuation);
+
+    result.code = context.code;
+    // the plugin can change anything in result to suite it
+    fire("after:highlight", result);
+
     return result;
   }
 
-  function mergeStreams(stream1, stream2, value) {
-    var processed = 0;
-    var result = '';
-    var nodeStack = [];
+  // private highlight that's used internally and does not fire callbacks
+  function _highlight(languageName, code, ignore_illegals, continuation) {
+    var codeToHighlight = code;
 
-    function selectStream() {
-      if (stream1.length && stream2.length) {
-        if (stream1[0].offset != stream2[0].offset)
-          return (stream1[0].offset < stream2[0].offset) ? stream1 : stream2;
-        else {
-          /*
-          To avoid starting the stream just before it should stop the order is
-          ensured that stream1 always starts first and closes last:
-
-          if (event1 == 'start' && event2 == 'start')
-            return stream1;
-          if (event1 == 'start' && event2 == 'stop')
-            return stream2;
-          if (event1 == 'stop' && event2 == 'start')
-            return stream1;
-          if (event1 == 'stop' && event2 == 'stop')
-            return stream2;
-
-          ... which is collapsed to:
-          */
-          return stream2[0].event == 'start' ? stream1 : stream2;
+    function endOfMode(mode, lexeme) {
+      if (regex.startsWith(mode.endRe, lexeme)) {
+        while (mode.endsParent && mode.parent) {
+          mode = mode.parent;
         }
-      } else {
-        return stream1.length ? stream1 : stream2;
-      }
-    }
-
-    function open(node) {
-      function attr_str(a) {return ' ' + a.nodeName + '="' + escape(a.value) + '"'};
-      return '<' + node.nodeName + Array.prototype.map.call(node.attributes, attr_str).join('') + '>';
-    }
-
-    while (stream1.length || stream2.length) {
-      var current = selectStream().splice(0, 1)[0];
-      result += escape(value.substr(processed, current.offset - processed));
-      processed = current.offset;
-      if ( current.event == 'start') {
-        result += open(current.node);
-        nodeStack.push(current.node);
-      } else if (current.event == 'stop') {
-        var node, i = nodeStack.length;
-        do {
-          i--;
-          node = nodeStack[i];
-          result += ('</' + node.nodeName.toLowerCase() + '>');
-        } while (node != current.node);
-        nodeStack.splice(i, 1);
-        while (i < nodeStack.length) {
-          result += open(nodeStack[i]);
-          i++;
-        }
-      }
-    }
-    return result + escape(value.substr(processed));
-  }
-
-  /* Initialization */
-
-  function compileLanguage(language) {
-
-    function reStr(re) {
-        return (re && re.source) || re;
-    }
-
-    function langRe(value, global) {
-      return RegExp(
-        reStr(value),
-        'm' + (language.case_insensitive ? 'i' : '') + (global ? 'g' : '')
-      );
-    }
-
-    function compileMode(mode, parent) {
-      if (mode.compiled)
-        return;
-      mode.compiled = true;
-
-      var keywords = []; // used later with beginWithKeyword but filled as a side-effect of keywords compilation
-      if (mode.keywords) {
-        var compiled_keywords = {};
-
-        function flatten(className, str) {
-          str.split(' ').forEach(function(kw) {
-            var pair = kw.split('|');
-            compiled_keywords[pair[0]] = [className, pair[1] ? Number(pair[1]) : 1];
-            keywords.push(pair[0]);
-          });
-        }
-
-        mode.lexemsRe = langRe(mode.lexems || hljs.IDENT_RE + '(?!\\.)', true);
-        if (typeof mode.keywords == 'string') { // string
-          flatten('keyword', mode.keywords)
-        } else {
-          for (var className in mode.keywords) {
-            if (!mode.keywords.hasOwnProperty(className))
-              continue;
-            flatten(className, mode.keywords[className]);
-          }
-        }
-        mode.keywords = compiled_keywords;
-      }
-      if (parent) {
-        if (mode.beginWithKeyword) {
-          mode.begin = '\\b(' + keywords.join('|') + ')\\b(?!\\.)\\s*';
-        }
-        mode.beginRe = langRe(mode.begin ? mode.begin : '\\B|\\b');
-        if (!mode.end && !mode.endsWithParent)
-          mode.end = '\\B|\\b';
-        if (mode.end)
-          mode.endRe = langRe(mode.end);
-        mode.terminator_end = reStr(mode.end) || '';
-        if (mode.endsWithParent && parent.terminator_end)
-          mode.terminator_end += (mode.end ? '|' : '') + parent.terminator_end;
-      }
-      if (mode.illegal)
-        mode.illegalRe = langRe(mode.illegal);
-      if (mode.relevance === undefined)
-        mode.relevance = 1;
-      if (!mode.contains) {
-        mode.contains = [];
-      }
-      for (var i = 0; i < mode.contains.length; i++) {
-        if (mode.contains[i] == 'self') {
-          mode.contains[i] = mode;
-        }
-        compileMode(mode.contains[i], mode);
-      }
-      if (mode.starts) {
-        compileMode(mode.starts, parent);
-      }
-
-      var terminators = [];
-      for (var i = 0; i < mode.contains.length; i++) {
-        terminators.push(reStr(mode.contains[i].begin));
-      }
-      if (mode.terminator_end) {
-        terminators.push(reStr(mode.terminator_end));
-      }
-      if (mode.illegal) {
-        terminators.push(reStr(mode.illegal));
-      }
-      mode.terminators = terminators.length ? langRe(terminators.join('|'), true) : {exec: function(s) {return null;}};
-    }
-
-    compileMode(language);
-  }
-
-  /*
-  Core highlighting function. Accepts a language name and a string with the
-  code to highlight. Returns an object with the following properties:
-
-  - relevance (int)
-  - keyword_count (int)
-  - value (an HTML string with highlighting markup)
-
-  */
-  function highlight(language_name, value, ignore_illegals) {
-
-    function subMode(lexem, mode) {
-      for (var i = 0; i < mode.contains.length; i++) {
-        var match = mode.contains[i].beginRe.exec(lexem);
-        if (match && match.index == 0) {
-          return mode.contains[i];
-        }
-      }
-    }
-
-    function endOfMode(mode, lexem) {
-      if (mode.end && mode.endRe.test(lexem)) {
         return mode;
       }
       if (mode.endsWithParent) {
-        return endOfMode(mode.parent, lexem);
+        return endOfMode(mode.parent, lexeme);
       }
-    }
-
-    function isIllegal(lexem, mode) {
-      return !ignore_illegals && mode.illegal && mode.illegalRe.test(lexem);
     }
 
     function keywordMatch(mode, match) {
@@ -261,146 +138,307 @@ function() {
     }
 
     function processKeywords() {
-      var buffer = escape(mode_buffer);
-      if (!top.keywords)
-        return buffer;
-      var result = '';
-      var last_index = 0;
-      top.lexemsRe.lastIndex = 0;
-      var match = top.lexemsRe.exec(buffer);
-      while (match) {
-        result += buffer.substr(last_index, match.index - last_index);
-        var keyword_match = keywordMatch(top, match);
-        if (keyword_match) {
-          keyword_count += keyword_match[1];
-          result += '<span class="'+ keyword_match[0] +'">' + match[0] + '</span>';
-        } else {
-          result += match[0];
-        }
-        last_index = top.lexemsRe.lastIndex;
-        match = top.lexemsRe.exec(buffer);
+      var keyword_match, last_index, match, result, buf;
+
+      if (!top.keywords) {
+        emitter.addText(mode_buffer);
+        return;
       }
-      return result + buffer.substr(last_index);
+
+      last_index = 0;
+      top.lexemesRe.lastIndex = 0;
+      match = top.lexemesRe.exec(mode_buffer);
+      buf = "";
+
+      while (match) {
+        buf += mode_buffer.substring(last_index, match.index);
+        keyword_match = keywordMatch(top, match);
+        var kind = null;
+        if (keyword_match) {
+          emitter.addText(buf);
+          buf = "";
+
+          relevance += keyword_match[1];
+          kind = keyword_match[0];
+          emitter.addKeyword(match[0], kind);
+        } else {
+          buf += match[0];
+        }
+        last_index = top.lexemesRe.lastIndex;
+        match = top.lexemesRe.exec(mode_buffer);
+      }
+      buf += mode_buffer.substr(last_index);
+      emitter.addText(buf);
     }
 
     function processSubLanguage() {
-      if (top.subLanguage && !languages[top.subLanguage]) {
-        return escape(mode_buffer);
+      if (mode_buffer === "") return;
+
+      var explicit = typeof top.subLanguage === 'string';
+
+      if (explicit && !languages[top.subLanguage]) {
+        emitter.addText(mode_buffer);
+        return;
       }
-      var result = top.subLanguage ? highlight(top.subLanguage, mode_buffer) : highlightAuto(mode_buffer);
+
+      var result = explicit ?
+                   _highlight(top.subLanguage, mode_buffer, true, continuations[top.subLanguage]) :
+                   highlightAuto(mode_buffer, top.subLanguage.length ? top.subLanguage : undefined);
+
       // Counting embedded language score towards the host language may be disabled
-      // with zeroing the containing mode relevance. Usecase in point is Markdown that
+      // with zeroing the containing mode relevance. Use case in point is Markdown that
       // allows XML everywhere and makes every XML snippet to have a much larger Markdown
       // score.
       if (top.relevance > 0) {
-        keyword_count += result.keyword_count;
         relevance += result.relevance;
       }
-      return '<span class="' + result.language  + '">' + result.value + '</span>';
+      if (explicit) {
+        continuations[top.subLanguage] = result.top;
+      }
+      emitter.addSublanguage(result.emitter, result.language);
     }
 
     function processBuffer() {
-      return top.subLanguage !== undefined ? processSubLanguage() : processKeywords();
+      if (top.subLanguage != null)
+        processSubLanguage();
+      else
+        processKeywords();
+      mode_buffer = '';
     }
 
-    function startNewMode(mode, lexem) {
-      var markup = mode.className? '<span class="' + mode.className + '">': '';
-      if (mode.returnBegin) {
-        result += markup;
-        mode_buffer = '';
-      } else if (mode.excludeBegin) {
-        result += escape(lexem) + markup;
-        mode_buffer = '';
-      } else {
-        result += markup;
-        mode_buffer = lexem;
+    function startNewMode(mode) {
+      if (mode.className) {
+        emitter.openNode(mode.className);
       }
       top = Object.create(mode, {parent: {value: top}});
     }
 
-    function processLexem(buffer, lexem) {
-      mode_buffer += buffer;
-      if (lexem === undefined) {
-        result += processBuffer();
+    function doIgnore(lexeme) {
+      if (top.matcher.regexIndex === 0) {
+        // no more regexs to potentially match here, so we move the cursor forward one
+        // space
+        mode_buffer += lexeme[0];
+        return 1;
+      } else {
+        // no need to move the cursor, we still have additional regexes to try and
+        // match at this very spot
+        continueScanAtSamePosition = true;
+        return 0;
+      }
+    }
+
+    function doBeginMatch(match) {
+      var lexeme = match[0];
+      var new_mode = match.rule;
+
+      if (new_mode.__onBegin) {
+        let res = new_mode.__onBegin(match) || {};
+        if (res.ignoreMatch)
+          return doIgnore(lexeme);
+      }
+
+      if (new_mode && new_mode.endSameAsBegin) {
+        new_mode.endRe = regex.escape( lexeme );
+      }
+
+      if (new_mode.skip) {
+        mode_buffer += lexeme;
+      } else {
+        if (new_mode.excludeBegin) {
+          mode_buffer += lexeme;
+        }
+        processBuffer();
+        if (!new_mode.returnBegin && !new_mode.excludeBegin) {
+          mode_buffer = lexeme;
+        }
+      }
+      startNewMode(new_mode);
+      return new_mode.returnBegin ? 0 : lexeme.length;
+    }
+
+    function doEndMatch(match) {
+      var lexeme = match[0];
+      var matchPlusRemainder = codeToHighlight.substr(match.index);
+      var end_mode = endOfMode(top, matchPlusRemainder);
+      if (!end_mode) { return; }
+
+      var origin = top;
+      if (origin.skip) {
+        mode_buffer += lexeme;
+      } else {
+        if (!(origin.returnEnd || origin.excludeEnd)) {
+          mode_buffer += lexeme;
+        }
+        processBuffer();
+        if (origin.excludeEnd) {
+          mode_buffer = lexeme;
+        }
+      }
+      do {
+        if (top.className) {
+          emitter.closeNode();
+        }
+        if (!top.skip && !top.subLanguage) {
+          relevance += top.relevance;
+        }
+        top = top.parent;
+      } while (top !== end_mode.parent);
+      if (end_mode.starts) {
+        if (end_mode.endSameAsBegin) {
+          end_mode.starts.endRe = end_mode.endRe;
+        }
+        startNewMode(end_mode.starts);
+      }
+      return origin.returnEnd ? 0 : lexeme.length;
+    }
+
+    function processContinuations() {
+      var list = [];
+      for(var current = top; current !== language; current = current.parent) {
+        if (current.className) {
+          list.unshift(current.className);
+        }
+      }
+      list.forEach(item => emitter.openNode(item));
+    }
+
+    var lastMatch = {};
+    function processLexeme(text_before_match, match) {
+
+      var err;
+      var lexeme = match && match[0];
+
+      // add non-matched text to the current mode buffer
+      mode_buffer += text_before_match;
+
+      if (lexeme == null) {
+        processBuffer();
         return 0;
       }
 
-      var new_mode = subMode(lexem, top);
-      if (new_mode) {
-        result += processBuffer();
-        startNewMode(new_mode, lexem);
-        return new_mode.returnBegin ? 0 : lexem.length;
-      }
 
-      var end_mode = endOfMode(top, lexem);
-      if (end_mode) {
-        var origin = top;
-        if (!(origin.returnEnd || origin.excludeEnd)) {
-          mode_buffer += lexem;
-        }
-        result += processBuffer();
-        do {
-          if (top.className) {
-            result += '</span>';
-          }
-          relevance += top.relevance;
-          top = top.parent;
-        } while (top != end_mode.parent);
-        if (origin.excludeEnd) {
-          result += escape(lexem);
-        }
-        mode_buffer = '';
-        if (end_mode.starts) {
-          startNewMode(end_mode.starts, '');
-        }
-        return origin.returnEnd ? 0 : lexem.length;
-      }
 
-      if (isIllegal(lexem, top))
-        throw new Error('Illegal lexem "' + lexem + '" for mode "' + (top.className || '<unnamed>') + '"');
+      // we've found a 0 width match and we're stuck, so we need to advance
+      // this happens when we have badly behaved rules that have optional matchers to the degree that
+      // sometimes they can end up matching nothing at all
+      // Ref: https://github.com/highlightjs/highlight.js/issues/2140
+      if (lastMatch.type=="begin" && match.type=="end" && lastMatch.index == match.index && lexeme === "") {
+        // spit the "skipped" character that our regex choked on back into the output sequence
+        mode_buffer += codeToHighlight.slice(match.index, match.index + 1);
+        if (!SAFE_MODE) {
+          err = new Error('0 width match regex');
+          err.languageName = languageName;
+          err.badRule = lastMatch.rule;
+          throw(err);
+        }
+        return 1;
+      }
+      lastMatch = match;
+
+      if (match.type==="begin") {
+        return doBeginMatch(match);
+      } else if (match.type==="illegal" && !ignore_illegals) {
+        // illegal match, we do not continue processing
+        err = new Error('Illegal lexeme "' + lexeme + '" for mode "' + (top.className || '<unnamed>') + '"');
+        err.mode = top;
+        throw err;
+      } else if (match.type==="end") {
+        var processed = doEndMatch(match);
+        if (processed != undefined)
+          return processed;
+      }
 
       /*
-      Parser should not reach this point as all types of lexems should be caught
-      earlier, but if it does due to some bug make sure it advances at least one
-      character forward to prevent infinite looping.
+      Why might be find ourselves here?  Only one occasion now.  An end match that was
+      triggered but could not be completed.  When might this happen?  When an `endSameasBegin`
+      rule sets the end rule to a specific match.  Since the overall mode termination rule that's
+      being used to scan the text isn't recompiled that means that any match that LOOKS like
+      the end (but is not, because it is not an exact match to the beginning) will
+      end up here.  A definite end match, but when `doEndMatch` tries to "reapply"
+      the end rule and fails to match, we wind up here, and just silently ignore the end.
+
+      This causes no real harm other than stopping a few times too many.
       */
-      mode_buffer += lexem;
-      return lexem.length || 1;
+
+      mode_buffer += lexeme;
+      return lexeme.length;
     }
 
-    var language = languages[language_name];
+    var language = getLanguage(languageName);
+    if (!language) {
+      console.error(LANGUAGE_NOT_FOUND.replace("{}", languageName));
+      throw new Error('Unknown language: "' + languageName + '"');
+    }
+
     compileLanguage(language);
-    var top = language;
+    var top = continuation || language;
+    var continuations = {}; // keep continuations for sub-languages
+    var result;
+    var emitter = new options.__emitter(options);
+    processContinuations();
     var mode_buffer = '';
     var relevance = 0;
-    var keyword_count = 0;
-    var result = '';
+    var match, processedCount, index = 0;
+
     try {
-      var match, count, index = 0;
+      var continueScanAtSamePosition = false;
+      top.matcher.considerAll();
+
       while (true) {
-        top.terminators.lastIndex = index;
-        match = top.terminators.exec(value);
+        if (continueScanAtSamePosition) {
+          continueScanAtSamePosition = false;
+          // only regexes not matched previously will now be
+          // considered for a potential match
+        } else {
+          top.matcher.lastIndex = index;
+          top.matcher.considerAll();
+        }
+        match = top.matcher.exec(codeToHighlight);
+        // console.log("match", match[0], match.rule && match.rule.begin)
         if (!match)
           break;
-        count = processLexem(value.substr(index, match.index - index), match[0]);
-        index = match.index + count;
+        let beforeMatch = codeToHighlight.substring(index, match.index);
+        processedCount = processLexeme(beforeMatch, match);
+        index = match.index + processedCount;
       }
-      processLexem(value.substr(index))
+      processLexeme(codeToHighlight.substr(index));
+      emitter.closeAllNodes();
+      emitter.finalize();
+      result = emitter.toHTML();
+
       return {
         relevance: relevance,
-        keyword_count: keyword_count,
         value: result,
-        language: language_name
+        language: languageName,
+        illegal: false,
+        emitter: emitter,
+        top: top
       };
-    } catch (e) {
-      if (e.message.indexOf('Illegal') != -1) {
+    } catch (err) {
+      if (err.message && err.message.includes('Illegal')) {
+        return {
+          illegal: true,
+          illegalBy: {
+            msg: err.message,
+            context: codeToHighlight.slice(index-100,index+100),
+            mode: err.mode
+          },
+          sofar: result,
+          relevance: 0,
+          value: escape(codeToHighlight),
+          emitter: emitter,
+        };
+      } else if (SAFE_MODE) {
         return {
           relevance: 0,
-          keyword_count: 0,
-          value: escape(value)
+          value: escape(codeToHighlight),
+          emitter: emitter,
+          language: languageName,
+          top: top,
+          errorRaised: err
         };
       } else {
-        throw e;
+        throw err;
       }
     }
   }
@@ -411,32 +449,30 @@ function() {
 
   - language (detected language)
   - relevance (int)
-  - keyword_count (int)
   - value (an HTML string with highlighting markup)
   - second_best (object with the same structure for second-best heuristically
     detected language, may be absent)
 
   */
-  function highlightAuto(text) {
+  function highlightAuto(code, languageSubset) {
+    languageSubset = languageSubset || options.languages || Object.keys(languages);
     var result = {
-      keyword_count: 0,
       relevance: 0,
-      value: escape(text)
+      emitter: new options.__emitter(options),
+      value: escape(code)
     };
     var second_best = result;
-    for (var key in languages) {
-      if (!languages.hasOwnProperty(key))
-        continue;
-      var current = highlight(key, text, false);
-      current.language = key;
-      if (current.keyword_count + current.relevance > second_best.keyword_count + second_best.relevance) {
+    languageSubset.filter(getLanguage).filter(autoDetection).forEach(function(name) {
+      var current = _highlight(name, code, false);
+      current.language = name;
+      if (current.relevance > second_best.relevance) {
         second_best = current;
       }
-      if (current.keyword_count + current.relevance > result.keyword_count + result.relevance) {
+      if (current.relevance > result.relevance) {
         second_best = result;
         result = current;
       }
-    }
+    });
     if (second_best.language) {
       result.second_best = second_best;
     }
@@ -450,55 +486,88 @@ function() {
   - replace real line-breaks with '<br>' for non-pre containers
 
   */
-  function fixMarkup(value, tabReplace, useBR) {
-    if (tabReplace) {
-      value = value.replace(/^((<[^>]+>|\t)+)/gm, function(match, p1, offset, s) {
-        return p1.replace(/\t/g, tabReplace);
-      });
+  function fixMarkup(value) {
+    if (!(options.tabReplace || options.useBR)) {
+      return value;
     }
-    if (useBR) {
-      value = value.replace(/\n/g, '<br>');
+
+    return value.replace(fixMarkupRe, function(match, p1) {
+        if (options.useBR && match === '\n') {
+          return '<br>';
+        } else if (options.tabReplace) {
+          return p1.replace(/\t/g, options.tabReplace);
+        }
+        return '';
+    });
+  }
+
+  function buildClassName(prevClassName, currentLang, resultLang) {
+    var language = currentLang ? aliases[currentLang] : resultLang,
+        result   = [prevClassName.trim()];
+
+    if (!prevClassName.match(/\bhljs\b/)) {
+      result.push('hljs');
     }
-    return value;
+
+    if (!prevClassName.includes(language)) {
+      result.push(language);
+    }
+
+    return result.join(' ').trim();
   }
 
   /*
   Applies highlighting to a DOM node containing code. Accepts a DOM node and
   two optional parameters for fixMarkup.
   */
-  function highlightBlock(block, tabReplace, useBR) {
-    var text = blockText(block, useBR);
+  function highlightBlock(block) {
+    var node, originalStream, result, resultNode, text;
     var language = blockLanguage(block);
-    if (language == 'no-highlight')
-        return;
-    var result = language ? highlight(language, text, true) : highlightAuto(text);
-    language = result.language;
-    var original = nodeStream(block);
-    if (original.length) {
-      var pre = document.createElement('pre');
-      pre.innerHTML = result.value;
-      result.value = mergeStreams(original, nodeStream(pre), text);
-    }
-    result.value = fixMarkup(result.value, tabReplace, useBR);
 
-    var class_name = block.className;
-    if (!class_name.match('(\\s|^)(language-)?' + language + '(\\s|$)')) {
-      class_name = class_name ? (class_name + ' ' + language) : language;
+    if (shouldNotHighlight(language))
+        return;
+
+    fire("before:highlightBlock",
+      { block: block, language: language});
+
+    if (options.useBR) {
+      node = document.createElement('div');
+      node.innerHTML = block.innerHTML.replace(/\n/g, '').replace(/<br[ \/]*>/g, '\n');
+    } else {
+      node = block;
     }
+    text = node.textContent;
+    result = language ? highlight(language, text, true) : highlightAuto(text);
+
+    originalStream = nodeStream(node);
+    if (originalStream.length) {
+      resultNode = document.createElement('div');
+      resultNode.innerHTML = result.value;
+      result.value = mergeStreams(originalStream, nodeStream(resultNode), text);
+    }
+    result.value = fixMarkup(result.value);
+
+    fire("after:highlightBlock", { block: block, result: result});
+
     block.innerHTML = result.value;
-    block.className = class_name;
+    block.className = buildClassName(block.className, language, result.language);
     block.result = {
-      language: language,
-      kw: result.keyword_count,
+      language: result.language,
       re: result.relevance
     };
     if (result.second_best) {
       block.second_best = {
         language: result.second_best.language,
-        kw: result.second_best.keyword_count,
         re: result.second_best.relevance
       };
     }
+  }
+
+  /*
+  Updates highlight.js global options with values passed in the form of an object.
+  */
+  function configure(user_options) {
+    options = inherit(options, user_options);
   }
 
   /*
@@ -508,9 +577,9 @@ function() {
     if (initHighlighting.called)
       return;
     initHighlighting.called = true;
-    Array.prototype.map.call(document.getElementsByTagName('pre'), findCode).
-      filter(Boolean).
-      forEach(function(code){highlightBlock(code, hljs.tabReplace)});
+
+    var blocks = document.querySelectorAll('pre code');
+    ArrayProto.forEach.call(blocks, highlightBlock);
   }
 
   /*
@@ -518,96 +587,108 @@ function() {
   */
   function initHighlightingOnLoad() {
     window.addEventListener('DOMContentLoaded', initHighlighting, false);
-    window.addEventListener('load', initHighlighting, false);
   }
 
-  var languages = {}; // a shortcut to avoid writing "this." everywhere
+  var PLAINTEXT_LANGUAGE = { disableAutodetect: true };
+
+  function registerLanguage(name, language) {
+    var lang;
+    try { lang = language(hljs); }
+    catch (error) {
+      console.error("Language definition for '{}' could not be registered.".replace("{}", name));
+      // hard or soft error
+      if (!SAFE_MODE) { throw error; } else { console.error(error); }
+      // languages that have serious errors are replaced with essentially a
+      // "plaintext" stand-in so that the code blocks will still get normal
+      // css classes applied to them - and one bad language won't break the
+      // entire highlighter
+      lang = PLAINTEXT_LANGUAGE;
+    }
+    // give it a temporary name if it doesn't have one in the meta-data
+    if (!lang.name)
+      lang.name = name;
+    languages[name] = lang;
+    lang.rawDefinition = language.bind(null,hljs);
+
+    if (lang.aliases) {
+      lang.aliases.forEach(function(alias) {aliases[alias] = name;});
+    }
+  }
+
+  function listLanguages() {
+    return Object.keys(languages);
+  }
+
+  /*
+    intended usage: When one language truly requires another
+
+    Unlike `getLanguage`, this will throw when the requested language
+    is not available.
+  */
+  function requireLanguage(name) {
+    var lang = getLanguage(name);
+    if (lang) { return lang; }
+
+    var err = new Error('The \'{}\' language is required, but not loaded.'.replace('{}',name));
+    throw err;
+  }
+
+  function getLanguage(name) {
+    name = (name || '').toLowerCase();
+    return languages[name] || languages[aliases[name]];
+  }
+
+  function autoDetection(name) {
+    var lang = getLanguage(name);
+    return lang && !lang.disableAutodetect;
+  }
+
+  function addPlugin(plugin, options) {
+    plugins.push(plugin);
+  }
+
+  function fire(event, args) {
+    var cb = event;
+    plugins.forEach(function (plugin) {
+      if (plugin[cb]) {
+        plugin[cb](args);
+      }
+    });
+  }
 
   /* Interface definition */
 
-  this.LANGUAGES = languages;
-  this.highlight = highlight;
-  this.highlightAuto = highlightAuto;
-  this.fixMarkup = fixMarkup;
-  this.highlightBlock = highlightBlock;
-  this.initHighlighting = initHighlighting;
-  this.initHighlightingOnLoad = initHighlightingOnLoad;
+  Object.assign(hljs,{
+    highlight,
+    highlightAuto,
+    fixMarkup,
+    highlightBlock,
+    configure,
+    initHighlighting,
+    initHighlightingOnLoad,
+    registerLanguage,
+    listLanguages,
+    getLanguage,
+    requireLanguage,
+    autoDetection,
+    inherit,
+    addPlugin
+  });
 
-  // Common regexps
-  this.IDENT_RE = '[a-zA-Z][a-zA-Z0-9_]*';
-  this.UNDERSCORE_IDENT_RE = '[a-zA-Z_][a-zA-Z0-9_]*';
-  this.NUMBER_RE = '\\b\\d+(\\.\\d+)?';
-  this.C_NUMBER_RE = '(\\b0[xX][a-fA-F0-9]+|(\\b\\d+(\\.\\d*)?|\\.\\d+)([eE][-+]?\\d+)?)'; // 0x..., 0..., decimal, float
-  this.BINARY_NUMBER_RE = '\\b(0b[01]+)'; // 0b...
-  this.RE_STARTERS_RE = '!|!=|!==|%|%=|&|&&|&=|\\*|\\*=|\\+|\\+=|,|\\.|-|-=|/|/=|:|;|<<|<<=|<=|<|===|==|=|>>>=|>>=|>=|>>>|>>|>|\\?|\\[|\\{|\\(|\\^|\\^=|\\||\\|=|\\|\\||~';
+  hljs.debugMode = function() { SAFE_MODE = false; };
+  hljs.safeMode = function() { SAFE_MODE = true; };
+  hljs.versionString = packageJSON.version;
 
-  // Common modes
-  this.BACKSLASH_ESCAPE = {
-    begin: '\\\\[\\s\\S]', relevance: 0
-  };
-  this.APOS_STRING_MODE = {
-    className: 'string',
-    begin: '\'', end: '\'',
-    illegal: '\\n',
-    contains: [this.BACKSLASH_ESCAPE],
-    relevance: 0
-  };
-  this.QUOTE_STRING_MODE = {
-    className: 'string',
-    begin: '"', end: '"',
-    illegal: '\\n',
-    contains: [this.BACKSLASH_ESCAPE],
-    relevance: 0
-  };
-  this.C_LINE_COMMENT_MODE = {
-    className: 'comment',
-    begin: '//', end: '$'
-  };
-  this.C_BLOCK_COMMENT_MODE = {
-    className: 'comment',
-    begin: '/\\*', end: '\\*/'
-  };
-  this.HASH_COMMENT_MODE = {
-    className: 'comment',
-    begin: '#', end: '$'
-  };
-  this.NUMBER_MODE = {
-    className: 'number',
-    begin: this.NUMBER_RE,
-    relevance: 0
-  };
-  this.C_NUMBER_MODE = {
-    className: 'number',
-    begin: this.C_NUMBER_RE,
-    relevance: 0
-  };
-  this.BINARY_NUMBER_MODE = {
-    className: 'number',
-    begin: this.BINARY_NUMBER_RE,
-    relevance: 0
-  };
-  this.REGEXP_MODE = {
-    className: 'regexp',
-    begin: /\//, end: /\/[gim]*/,
-    illegal: /\n/,
-    contains: [
-      this.BACKSLASH_ESCAPE,
-      {
-        begin: /\[/, end: /\]/,
-        relevance: 0,
-        contains: [this.BACKSLASH_ESCAPE]
-      }
-    ]
+  for (const key in MODES) {
+    if (typeof MODES[key] === "object")
+      deepFreeze(MODES[key]);
   }
 
-  // Utility functions
-  this.inherit = function(parent, obj) {
-    var result = {}
-    for (var key in parent)
-      result[key] = parent[key];
-    if (obj)
-      for (var key in obj)
-        result[key] = obj[key];
-    return result;
-  }
-}
+  // merge all the modes/regexs into our main object
+  Object.assign(hljs, MODES);
+
+  return hljs;
+};
+
+// export an "instance" of the highlighter
+export default HLJS({});

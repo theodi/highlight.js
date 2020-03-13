@@ -1,9 +1,12 @@
 /*
 Language: Lua
+Description: Lua is a powerful, efficient, lightweight, embeddable scripting language.
 Author: Andrew Fedorov <dmmdrs@mail.ru>
+Category: common, scripting
+Website: https://www.lua.org
 */
 
-function(hljs) {
+export default function(hljs) {
   var OPENING_LONG_BRACKET = '\\[=*\\[';
   var CLOSING_LONG_BRACKET = '\\]=*\\]';
   var LONG_BRACKETS = {
@@ -11,39 +14,45 @@ function(hljs) {
     contains: ['self']
   };
   var COMMENTS = [
-    {
-      className: 'comment',
-      begin: '--(?!' + OPENING_LONG_BRACKET + ')', end: '$'
-    },
-    {
-      className: 'comment',
-      begin: '--' + OPENING_LONG_BRACKET, end: CLOSING_LONG_BRACKET,
-      contains: [LONG_BRACKETS],
-      relevance: 10
-    }
-  ]
+    hljs.COMMENT('--(?!' + OPENING_LONG_BRACKET + ')', '$'),
+    hljs.COMMENT(
+      '--' + OPENING_LONG_BRACKET,
+      CLOSING_LONG_BRACKET,
+      {
+        contains: [LONG_BRACKETS],
+        relevance: 10
+      }
+    )
+  ];
   return {
-    lexems: hljs.UNDERSCORE_IDENT_RE,
+    name: 'Lua',
+    lexemes: hljs.UNDERSCORE_IDENT_RE,
     keywords: {
-      keyword:
-        'and break do else elseif end false for if in local nil not or repeat return then ' +
-        'true until while',
+      literal: "true false nil",
+      keyword: "and break do else elseif end for goto if in local not or repeat return then until while",
       built_in:
-        '_G _VERSION assert collectgarbage dofile error getfenv getmetatable ipairs load ' +
-        'loadfile loadstring module next pairs pcall print rawequal rawget rawset require ' +
-        'select setfenv setmetatable tonumber tostring type unpack xpcall coroutine debug ' +
-        'io math os package string table'
+        //Metatags and globals:
+        '_G _ENV _VERSION __index __newindex __mode __call __metatable __tostring __len ' +
+        '__gc __add __sub __mul __div __mod __pow __concat __unm __eq __lt __le assert ' +
+        //Standard methods and properties:
+        'collectgarbage dofile error getfenv getmetatable ipairs load loadfile loadstring ' +
+        'module next pairs pcall print rawequal rawget rawset require select setfenv ' +
+        'setmetatable tonumber tostring type unpack xpcall arg self ' +
+        //Library methods and properties (one line per library):
+        'coroutine resume yield status wrap create running debug getupvalue ' +
+        'debug sethook getmetatable gethook setmetatable setlocal traceback setfenv getinfo setupvalue getlocal getregistry getfenv ' +
+        'io lines write close flush open output type read stderr stdin input stdout popen tmpfile ' +
+        'math log max acos huge ldexp pi cos tanh pow deg tan cosh sinh random randomseed frexp ceil floor rad abs sqrt modf asin min mod fmod log10 atan2 exp sin atan ' +
+        'os exit setlocale date getenv difftime remove time clock tmpname rename execute package preload loadlib loaded loaders cpath config path seeall ' +
+        'string sub upper len gfind rep find match char dump gmatch reverse byte format gsub lower ' +
+        'table setn insert getn foreachi maxn foreach concat sort remove'
     },
     contains: COMMENTS.concat([
       {
         className: 'function',
-        beginWithKeyword: true, end: '\\)',
-        keywords: 'function',
+        beginKeywords: 'function', end: '\\)',
         contains: [
-          {
-            className: 'title',
-            begin: '([_a-zA-Z]\\w*\\.)*([_a-zA-Z]\\w*:)?[_a-zA-Z]\\w*'
-          },
+          hljs.inherit(hljs.TITLE_MODE, {begin: '([_a-zA-Z]\\w*\\.)*([_a-zA-Z]\\w*:)?[_a-zA-Z]\\w*'}),
           {
             className: 'params',
             begin: '\\(', endsWithParent: true,
@@ -58,7 +67,7 @@ function(hljs) {
         className: 'string',
         begin: OPENING_LONG_BRACKET, end: CLOSING_LONG_BRACKET,
         contains: [LONG_BRACKETS],
-        relevance: 10
+        relevance: 5
       }
     ])
   };
